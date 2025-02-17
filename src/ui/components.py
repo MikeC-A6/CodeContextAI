@@ -23,7 +23,7 @@ class UIComponents:
         st.text_area("", value=snippets, height=300, key="snippets_area")
 
         st.subheader("Final Answer (via o3-mini)")
-        st.text_area("", value=answer, height=200, key="answer_area")
+        st.markdown(answer)
 
     @staticmethod
     def show_error(message: str):
