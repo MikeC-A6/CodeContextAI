@@ -2,7 +2,7 @@ import streamlit as st
 
 class UIComponents:
     """Reusable UI components"""
-    
+
     @staticmethod
     def show_file_uploader() -> str:
         """Display file upload widget"""
@@ -20,10 +20,10 @@ class UIComponents:
     def show_results(snippets: str, answer: str):
         """Display results from the LLM chain"""
         st.subheader("Relevant Code Snippets (via Gemini)")
-        st.text_area("", snippets, height=300, disabled=True)
-        
+        st.text_area("", value=snippets, height=300, key="snippets_area")
+
         st.subheader("Final Answer (via o3-mini)")
-        st.text_area("", answer, height=200, disabled=True)
+        st.text_area("", value=answer, height=200, key="answer_area")
 
     @staticmethod
     def show_error(message: str):
