@@ -63,18 +63,20 @@ class GeminiClient:
             If no relevant files are found, respond with an empty or minimal output.
             """
 
-            response = self.model.generate(
+            response = self.model.generate_content(
                 prompt,
-                temperature=0.7,
-                top_p=0.8,
-                top_k=40,
-                max_tokens=50000
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=50000
+                )
             )
 
             if response.prompt_feedback and response.prompt_feedback.block_reason:
                 raise LLMException(f"Content blocked: {response.prompt_feedback.block_reason}")
 
-            return response.text.strip()
+            return response.text
 
         except Exception as e:
             if "429" in str(e):
