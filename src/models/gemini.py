@@ -8,14 +8,14 @@ class GeminiClient:
     """
     A simplified Gemini client that:
     1. Accepts a question and a code context (read directly from a JSONL file).
-    2. Passes a robust prompt to Gemini with all the code.
+    2. Passes a robust prompt to Gemini 2.0 Flash Lite with all the code.
     3. Returns entire code files deemed relevant, erring on the side of including extra context.
     """
 
     def __init__(self, api_key: str, model_name: str):
         """
-        :param api_key: The Google Generative AI API key.
-        :param model_name: The Gemini model identifier
+        :param api_key: The Google Generative AI (Vertex) API key.
+        :param model_name: The Gemini model identifier, e.g., 'models/text-bison-001'
         """
         try:
             genai.configure(api_key=api_key)
@@ -25,10 +25,13 @@ class GeminiClient:
 
     def generate(self, question: str, code_context: str) -> str:
         """
-        Call Gemini with a large code context and a user question.
+        Call Gemini 2.0 Flash Lite with a large code context (from a JSONL file) and a user question.
+        The prompt instructs the model to return entire code files that might be relevant to the question.
+        If you return a file and you think that there are other relevant files that help to complete the picture,
+        return those files as well. Err on the side of returning more context.
 
         :param question: The user question or prompt.
-        :param code_context: A large string containing code and metadata.
+        :param code_context: A large string containing code and metadata directly read from a JSONL file.
         :return: A text block containing the entire code files considered relevant.
         """
         try:
@@ -60,22 +63,17 @@ class GeminiClient:
             If no relevant files are found, respond with an empty or minimal output.
             """
 
-            # Use generate_content() instead of generate()
-            response = self.model.generate_content(
-                contents=prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=2048,
-                )
+            response = self.model.generate(
+                prompt,
+                temperature=0.7,
+                top_p=0.8,
+                top_k=40,
+                max_tokens=50000
             )
 
-            # Check if the response was blocked
-            if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
+            if response.prompt_feedback and response.prompt_feedback.block_reason:
                 raise LLMException(f"Content blocked: {response.prompt_feedback.block_reason}")
 
-            # Get the text from the response
             return response.text.strip()
 
         except Exception as e:
