@@ -4,7 +4,7 @@ from .base import LLMBase, LLMException
 from ..config import Config
 
 class OpenRouterClient(LLMBase):
-    """Client for interacting with OpenRouter API to access o3-mini model"""
+    """Client for interacting with OpenRouter API to access the o3-mini model"""
 
     def __init__(self):
         self.base_url = Config.OPENROUTER_BASE_URL
@@ -25,35 +25,33 @@ class OpenRouterClient(LLMBase):
                     "messages": [
                         {
                             "role": "system",
-                            "content": """You are a code analysis assistant that provides clear, 
-                            well-structured answers in markdown format. Your responses should:
-                            1. Use markdown headers (##) to organize sections
-                            2. Place code snippets in proper markdown code blocks with language tags
-                            3. Use bold text (**) for important concepts
-                            4. Maintain clear separation between code and explanations
-                            5. Include a brief summary at the end
-                            """
+                            "content": (
+                                "You are a code analysis assistant that provides clear, well-structured "
+                                "answers in markdown format. Your responses should:\n"
+                                "1. Use markdown headers (##) to organize sections\n"
+                                "2. Place code snippets in proper markdown code blocks with language tags\n"
+                                "3. Use bold text (**) for important concepts\n"
+                                "4. Maintain clear separation between code and explanations\n"
+                                "5. Include a brief summary at the end"
+                            )
                         },
                         {
                             "role": "user",
-                            "content": f"""
-                            Based on these relevant code snippets and explanations:
-
-                            {context}
-
-                            Please provide a markdown-formatted answer to this question:
-                            {prompt}
-
-                            Structure your response with:
-                            1. A clear introduction
-                            2. Code analysis with properly formatted code blocks
-                            3. Detailed explanations under each section
-                            4. A brief conclusion summarizing the key points
-                            """
+                            "content": (
+                                f"Based on these complete code files and any additional context that might help complete the picture:\n\n"
+                                f"{context}\n\n"
+                                f"Please provide a detailed, markdown-formatted answer to the following question:\n"
+                                f"{prompt}\n\n"
+                                "Structure your response with:\n"
+                                "1. A clear introduction\n"
+                                "2. Code analysis with properly formatted code blocks\n"
+                                "3. Detailed explanations under each section\n"
+                                "4. A brief conclusion summarizing the key points"
+                            )
                         }
                     ],
                     "temperature": 0.7,
-                    "max_tokens": 1024
+                    "max_tokens": 10000
                 }
             )
             response.raise_for_status()
