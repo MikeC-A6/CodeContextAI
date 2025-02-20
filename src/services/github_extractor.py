@@ -3,145 +3,175 @@ import re
 import shutil
 import tempfile
 from urllib.parse import urlparse
-from typing import List, Dict
+from typing import List, Dict, Optional
 import json
+from dataclasses import dataclass
 
 import git
 import pathspec
 
 from ..config.ignore_patterns import DEFAULT_IGNORE_PATTERNS
+from .pattern_matcher import PatternMatcher
+from .file_system import FileSystem, FileInfo
+from .repo_cloner import RepoCloner, RepoInfo
+
+@dataclass
+class ExtractedFile:
+    """Represents an extracted file with its content."""
+    path: str
+    content: str
+    language: str
+    type: str = "code"
+    size: int = 0
+    is_truncated: bool = False
 
 class GitHubExtractor:
+    """Extracts code from GitHub repositories with intelligent filtering."""
+    
     def __init__(self, max_file_size_bytes: int = 5 * 1024 * 1024):
-        self.max_file_size = max_file_size_bytes
-        
-    def extract_to_jsonl(self, github_url: str) -> List[Dict]:
-        """
-        Extract code from a GitHub URL (repo or subdirectory) and return as JSONL-compatible list.
-        Each item in the list will have the format expected by the existing file handler:
-        {
-            "path": "relative/path/to/file",
-            "content": "file contents",
-            "language": "python",
-            "type": "code"
-        }
-        """
-        repo_url, branch, subdir = self._parse_github_url(github_url)
-        temp_dir = None
-        
+        self.pattern_matcher = PatternMatcher(DEFAULT_IGNORE_PATTERNS)
+        self.file_system = FileSystem(max_file_size_bytes)
+        self.repo_cloner = RepoCloner()
+    
+    def analyze_repo(self, github_url: str) -> Dict:
+        """Analyze repository without downloading content."""
+        repo_info = None
         try:
-            # Clone the repo
-            temp_dir = self._clone_repo(repo_url, branch)
+            repo_info = self.repo_cloner.clone(github_url)
+            target_dir = self._get_target_dir(repo_info)
             
-            # Build ignore spec
-            ignore_spec = pathspec.PathSpec.from_lines("gitwildmatch", DEFAULT_IGNORE_PATTERNS)
+            # Get filtered files
+            files = self._get_filtered_files(target_dir)
             
-            # Gather files
-            files = self._gather_files(temp_dir, subdir, ignore_spec)
+            # Analyze files
+            total_size = sum(f.size for f in files)
+            by_extension = {}
+            for f in files:
+                by_extension[f.extension] = by_extension.get(f.extension, 0) + 1
             
-            # Convert to JSONL format
-            return self._convert_to_jsonl(files, temp_dir)
+            large_files = [f.relative_path for f in files if f.is_large]
+            
+            return {
+                "total_files": len(files),
+                "total_size_bytes": total_size,
+                "by_extension": by_extension,
+                "large_files": large_files,
+                "processed_patterns": self.pattern_matcher.processed_patterns
+            }
             
         finally:
-            if temp_dir:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            if repo_info:
+                self.repo_cloner.cleanup(repo_info)
     
-    def _parse_github_url(self, url: str) -> tuple[str, str, str]:
-        """Parse GitHub URL into (repo_url, branch, subdirectory)"""
-        parsed = urlparse(url)
-        segments = [s for s in parsed.path.split('/') if s]
+    def extract_to_jsonl(self, github_url: str) -> List[Dict]:
+        """Extract code from GitHub URL to JSONL format."""
+        # First analyze the repo
+        analysis = self.analyze_repo(github_url)
         
-        if len(segments) < 2:
-            raise ValueError("Invalid GitHub URL: not enough path segments")
-            
-        org = segments[0]
-        repo = segments[1]
-        base_repo_url = f"https://github.com/{org}/{repo}.git"
+        # Check total size
+        total_size_mb = analysis["total_size_bytes"] / (1024 * 1024)
+        if total_size_mb > 50:  # 50MB limit
+            raise ValueError(
+                f"Repository is too large ({total_size_mb:.1f}MB). "
+                f"Contains {len(analysis['large_files'])} large files. "
+                "Please use a smaller repository or specify a subdirectory."
+            )
         
-        branch = "main"
-        subdir_idx = 2
-        if len(segments) >= 4 and segments[2] == "tree":
-            branch = segments[3]
-            subdir_idx = 4
-            
-        subdir = "/".join(segments[subdir_idx:])
-        return base_repo_url, branch, subdir
-    
-    def _clone_repo(self, repo_url: str, branch: str) -> str:
-        """Shallow clone the repo and return temp directory path"""
-        tmp_dir = tempfile.mkdtemp(prefix="repo-clone-")
+        # Now do the actual extraction
+        repo_info = None
         try:
-            git.Repo.clone_from(repo_url, tmp_dir, branch=branch, depth=1)
-            return tmp_dir
-        except Exception as exc:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            raise RuntimeError(f"Failed to clone repository: {exc}")
+            repo_info = self.repo_cloner.clone(github_url)
+            target_dir = self._get_target_dir(repo_info)
+            files = self._get_filtered_files(target_dir)
+            return self._convert_to_jsonl(files)
+        finally:
+            if repo_info:
+                self.repo_cloner.cleanup(repo_info)
     
-    def _gather_files(self, base_path: str, subdirectory: str, ignore_spec) -> List[str]:
-        """Gather all relevant files from the directory"""
-        gathered = []
-        target_dir = os.path.join(base_path, subdirectory) if subdirectory else base_path
-        
-        if not os.path.isdir(target_dir):
-            raise ValueError(f"Subdirectory does not exist: {subdirectory}")
-            
-        for root, _, files in os.walk(target_dir):
-            for filename in files:
-                rel_path = os.path.relpath(os.path.join(root, filename), base_path)
-                if ignore_spec.match_file(rel_path):
-                    continue
-                    
-                full_path = os.path.join(root, filename)
-                try:
-                    if os.path.getsize(full_path) > self.max_file_size:
-                        continue
-                except OSError:
-                    continue
-                    
-                gathered.append(full_path)
-        return gathered
+    def _get_target_dir(self, repo_info: RepoInfo) -> str:
+        """Get the target directory to process."""
+        if repo_info.subdir:
+            full_path = os.path.join(repo_info.clone_path, repo_info.subdir)
+            if not os.path.isdir(full_path):
+                raise ValueError(f"Subdirectory does not exist: {repo_info.subdir}")
+            return full_path
+        return repo_info.clone_path
     
-    def _convert_to_jsonl(self, file_paths: List[str], base_path: str) -> List[Dict]:
-        """Convert files to JSONL format compatible with existing file handler"""
+    def _get_filtered_files(self, directory: str) -> List[FileInfo]:
+        """Get list of files after applying ignore patterns."""
+        all_files = self.file_system.list_files(directory)
+        return [f for f in all_files if not self.pattern_matcher.should_ignore(f.relative_path)]
+    
+    def _convert_to_jsonl(self, files: List[FileInfo]) -> List[Dict]:
+        """Convert files to JSONL format."""
         result = []
-        for fp in file_paths:
-            rel_path = os.path.relpath(fp, base_path)
-            try:
-                with open(fp, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-            except Exception as exc:
-                content = f"[Error reading file: {exc}]"
+        for file_info in files:
+            content = self.file_system.read_file(file_info)
+            if content is None:
+                continue
                 
-            # Determine language from extension
-            _, ext = os.path.splitext(fp)
-            language = self._map_extension_to_language(ext)
+            language = self._map_extension_to_language(file_info.extension)
+            extracted = ExtractedFile(
+                path=file_info.relative_path,
+                content=content,
+                language=language or "unknown",
+                size=file_info.size,
+                is_truncated=file_info.is_large
+            )
             
-            result.append({
-                "path": rel_path.replace("\\", "/"),
-                "content": content,
-                "language": language,
-                "type": "code"
-            })
+            result.append(extracted.__dict__)
+        
         return result
     
-    def _map_extension_to_language(self, ext: str) -> str:
-        """Map file extension to language name"""
-        ext = ext.lower()
+    def _map_extension_to_language(self, ext: str) -> Optional[str]:
+        """Map file extension to language name."""
         ext_map = {
+            # Python
             ".py": "python",
+            ".pyi": "python",
+            ".pyx": "python",
+            # JavaScript/TypeScript
             ".js": "javascript",
             ".jsx": "javascript",
             ".ts": "typescript",
             ".tsx": "typescript",
+            # Web
             ".html": "html",
+            ".htm": "html",
             ".css": "css",
-            ".json": "json",
-            ".md": "markdown",
-            ".yml": "yaml",
-            ".yaml": "yaml",
+            ".scss": "scss",
+            ".sass": "scss",
+            ".less": "less",
+            # Java
             ".java": "java",
+            ".kt": "kotlin",
+            ".scala": "scala",
+            ".groovy": "groovy",
+            # C-family
             ".c": "c",
+            ".h": "c",
             ".cpp": "cpp",
+            ".hpp": "cpp",
+            ".cc": "cpp",
+            ".cxx": "cpp",
             ".cs": "csharp",
+            # Other languages
+            ".go": "go",
+            ".rb": "ruby",
+            ".php": "php",
+            ".rs": "rust",
+            ".swift": "swift",
+            ".m": "objective-c",
+            ".lua": "lua",
+            ".pl": "perl",
+            ".sh": "shell",
+            ".bash": "shell",
+            ".zsh": "shell",
+            ".fish": "shell",
+            # Template files
+            ".jinja": "jinja",
+            ".jinja2": "jinja",
+            ".j2": "jinja",
+            ".template": "template"
         }
-        return ext_map.get(ext, "unknown") 
+        return ext_map.get(ext) 
