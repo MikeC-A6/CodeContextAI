@@ -17,7 +17,7 @@ class ProcessingState(Enum):
 
 class UIStateManager:
     """Manages UI state and loading messages"""
-    
+
     @staticmethod
     def init_session_state():
         """Initialize session state variables if they don't exist"""
@@ -44,33 +44,30 @@ class UIStateManager:
         error_msg = st.session_state.error_message
 
         if state == ProcessingState.EXTRACTING_REPO:
-            with st.status("Extracting code from repository...", expanded=True) as status:
+            with st.status("Processing repository...", expanded=True) as status:
                 st.write("• Cloning repository")
                 st.write("• Analyzing files")
                 st.write("• Filtering relevant code")
                 if not st.session_state.status_complete:
                     st.session_state.status_complete = True
-                    st.rerun()
-                status.update(label="Repository extracted!", state="complete", expanded=False)
-        
+                    status.update(label="Repository processed!", state="complete", expanded=False)
+
         elif state == ProcessingState.ANALYZING_QUESTION:
-            with st.status("Processing your question...", expanded=True) as status:
-                st.write("• Identifying relevant files")
-                st.write("• Analyzing code context")
+            with st.status("Analyzing your question...", expanded=True) as status:
+                st.write("• Identifying relevant code sections")
+                st.write("• Preparing context for AI analysis")
                 if not st.session_state.status_complete:
                     st.session_state.status_complete = True
-                    st.rerun()
-                status.update(label="Analysis complete!", state="complete", expanded=False)
-                
+                    status.update(label="Analysis complete!", state="complete", expanded=False)
+
         elif state == ProcessingState.GENERATING_ANSWER:
-            with st.status("Generating answer...", expanded=True) as status:
-                st.write("• Extracting code snippets")
-                st.write("• Formulating detailed response")
+            with st.status("Generating response...", expanded=True) as status:
+                st.write("• Processing code context")
+                st.write("• Generating detailed answer")
                 if not st.session_state.status_complete:
                     st.session_state.status_complete = True
-                    st.rerun()
-                status.update(label="Answer generated!", state="complete", expanded=False)
-                
+                    status.update(label="Response ready!", state="complete", expanded=False)
+
         elif state == ProcessingState.ERROR and error_msg:
             st.error(f"⚠️ {error_msg}")
 
@@ -79,4 +76,4 @@ class UIStateManager:
         """Reset the state to idle"""
         st.session_state.processing_state = ProcessingState.IDLE
         st.session_state.error_message = None
-        st.session_state.status_complete = False 
+        st.session_state.status_complete = False
