@@ -27,8 +27,6 @@ class UIStateManager:
             st.session_state.error_message = None
         if 'code_context' not in st.session_state:
             st.session_state.code_context = None
-        if 'status_complete' not in st.session_state:
-            st.session_state.status_complete = False
         if 'snippets' not in st.session_state:
             st.session_state.snippets = None
 
@@ -37,7 +35,6 @@ class UIStateManager:
         """Set the current processing state and optional error message"""
         st.session_state.processing_state = state
         st.session_state.error_message = error_msg
-        st.session_state.status_complete = False
 
     @staticmethod
     def show_status():
@@ -46,23 +43,20 @@ class UIStateManager:
         error_msg = st.session_state.error_message
 
         if state == ProcessingState.EXTRACTING_REPO:
-            with st.status("Processing repository...", expanded=True) as status:
+            with st.status("Repository extraction in progress...", expanded=True) as status:
                 st.write("• Cloning repository")
                 st.write("• Analyzing files")
                 st.write("• Filtering relevant code")
-                # Don't mark complete here - let the process finish first
 
         elif state == ProcessingState.ANALYZING_QUESTION:
             with st.status("Analyzing your question...", expanded=True) as status:
                 st.write("• Identifying relevant code sections")
                 st.write("• Preparing context for AI analysis")
-                # Don't mark complete here - let the process finish first
 
         elif state == ProcessingState.GENERATING_ANSWER:
             with st.status("Generating response...", expanded=True) as status:
                 st.write("• Processing code context")
                 st.write("• Generating detailed answer")
-                # Don't mark complete here - let the process finish first
 
         elif state == ProcessingState.ERROR and error_msg:
             st.error(f"⚠️ {error_msg}")
@@ -72,5 +66,4 @@ class UIStateManager:
         """Reset the state to idle"""
         st.session_state.processing_state = ProcessingState.IDLE
         st.session_state.error_message = None
-        st.session_state.status_complete = False
         st.session_state.snippets = None
