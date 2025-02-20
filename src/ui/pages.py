@@ -22,6 +22,9 @@ class MainPage:
         # Initialize state
         UIStateManager.init_session_state()
 
+        # Show current status before any new operations
+        UIStateManager.show_status()
+
         # Input section
         input_method, input_data = self.components.show_input_selector()
 
@@ -29,7 +32,17 @@ class MainPage:
             # Process input if we have new data
             if input_data and st.session_state.processing_state == ProcessingState.IDLE:
                 try:
+                    # Set state to processing and force a rerun to show status
                     UIStateManager.set_state(ProcessingState.EXTRACTING_REPO)
+                    st.rerun()
+
+                except Exception as e:
+                    UIStateManager.set_state(ProcessingState.ERROR, str(e))
+                    return
+
+            # Actually process the input after the rerun
+            if input_data and st.session_state.processing_state == ProcessingState.EXTRACTING_REPO:
+                try:
                     if input_method == "file":
                         parsed_data = self.file_handler.parse_jsonl(input_data)
                     else:  # github
@@ -44,27 +57,43 @@ class MainPage:
                     UIStateManager.set_state(ProcessingState.ERROR, str(e))
                     return
 
-            # Show current status
-            UIStateManager.show_status()
-
             # Show question input if we have code context
             if st.session_state.code_context:
                 question = self.components.show_question_input()
 
                 if question and self.components.show_processing_button():
                     try:
-                        # Get initial snippets
+                        # Set initial analysis state and force rerun
                         UIStateManager.set_state(ProcessingState.ANALYZING_QUESTION)
                         st.rerun()
 
+                    except Exception as e:
+                        UIStateManager.set_state(ProcessingState.ERROR, str(e))
+                        return
+
+                # Process the question after rerun
+                if question and st.session_state.processing_state == ProcessingState.ANALYZING_QUESTION:
+                    try:
+                        # Get initial snippets
                         snippets, _ = self.llm_chain.process_query(
                             question, st.session_state.code_context
                         )
 
-                        # Get final answer
+                        # Update state to generating answer and force rerun
                         UIStateManager.set_state(ProcessingState.GENERATING_ANSWER)
                         st.rerun()
 
+                    except Exception as e:
+                        UIStateManager.set_state(
+                            ProcessingState.ERROR,
+                            f"Error analyzing question: {str(e)}"
+                        )
+                        return
+
+                # Generate the final answer after rerun
+                if question and st.session_state.processing_state == ProcessingState.GENERATING_ANSWER:
+                    try:
+                        # Get final answer
                         _, answer = self.llm_chain.process_query(
                             question, st.session_state.code_context
                         )
@@ -76,7 +105,7 @@ class MainPage:
                     except Exception as e:
                         UIStateManager.set_state(
                             ProcessingState.ERROR,
-                            f"Error processing query: {str(e)}"
+                            f"Error generating answer: {str(e)}"
                         )
 
         except Exception as e:

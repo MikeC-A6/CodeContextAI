@@ -29,6 +29,8 @@ class UIStateManager:
             st.session_state.code_context = None
         if 'status_complete' not in st.session_state:
             st.session_state.status_complete = False
+        if 'snippets' not in st.session_state:
+            st.session_state.snippets = None
 
     @staticmethod
     def set_state(state: ProcessingState, error_msg: Optional[str] = None):
@@ -48,25 +50,19 @@ class UIStateManager:
                 st.write("• Cloning repository")
                 st.write("• Analyzing files")
                 st.write("• Filtering relevant code")
-                if not st.session_state.status_complete:
-                    st.session_state.status_complete = True
-                    status.update(label="Repository processed!", state="complete", expanded=False)
+                # Don't mark complete here - let the process finish first
 
         elif state == ProcessingState.ANALYZING_QUESTION:
             with st.status("Analyzing your question...", expanded=True) as status:
                 st.write("• Identifying relevant code sections")
                 st.write("• Preparing context for AI analysis")
-                if not st.session_state.status_complete:
-                    st.session_state.status_complete = True
-                    status.update(label="Analysis complete!", state="complete", expanded=False)
+                # Don't mark complete here - let the process finish first
 
         elif state == ProcessingState.GENERATING_ANSWER:
             with st.status("Generating response...", expanded=True) as status:
                 st.write("• Processing code context")
                 st.write("• Generating detailed answer")
-                if not st.session_state.status_complete:
-                    st.session_state.status_complete = True
-                    status.update(label="Response ready!", state="complete", expanded=False)
+                # Don't mark complete here - let the process finish first
 
         elif state == ProcessingState.ERROR and error_msg:
             st.error(f"⚠️ {error_msg}")
@@ -77,3 +73,4 @@ class UIStateManager:
         st.session_state.processing_state = ProcessingState.IDLE
         st.session_state.error_message = None
         st.session_state.status_complete = False
+        st.session_state.snippets = None

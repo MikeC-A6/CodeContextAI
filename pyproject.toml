@@ -12,4 +12,5 @@ dependencies = [
     "trafilatura>=2.0.0",
     "GitPython>=3.1.42",
     "pathspec>=0.12.1",
+    "twilio>=9.4.6",
 ]
