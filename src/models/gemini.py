@@ -35,7 +35,7 @@ class GeminiClient:
     3. Returns a JSON array of file references, each containing:
        - path
        - reason
-       - github_url
+       - github_url (if from GitHub, otherwise a placeholder)
     """
 
     def __init__(self, api_key: str, model_name: str):
@@ -47,33 +47,15 @@ class GeminiClient:
             # Configure the client with your API key.
             genai.configure(api_key=api_key)
 
-            # Adjusted system instruction to emphasize thoroughness.
+            # Adjusted system instruction to emphasize thoroughness and GitHub URL handling
             self.model = genai.GenerativeModel(
                 model_name=model_name,
-                system_instruction=(
-                    "You are a code analysis assistant acting as a retrieval-augmented generation (RAG) component. "
-                    "Your job:\n"
-                    "1. Analyze a user-provided question and a large codebase context.\n"
-                    "2. Identify any files that are or might be relevant to the user's question. If there is any shred of doubt, "
-                    "err on the side of inclusion.\n"
-                    "3. For each relevant file, return a JSON object:\n"
-                    "   {\n"
-                    "     \"path\": \"...\",\n"
-                    "     \"reason\": \"why it is or might be relevant\",\n"
-                    "     \"github_url\": \"https://github.com/...\"\n"
-                    "   }\n\n"
-                    "Return only a JSON array of these objects and nothing else. If no files are relevant, return [].\n"
-                    "Under no circumstances provide code snippets; only references. "
-                    "When evaluating relevance, be broad but not indiscriminate: If a file is almost certainly irrelevant, do not include it. "
-                    "However, if there's any potential link to the question, include it.\n"
-                    "Exact JSON schema:\n"
-                    "[\n"
-                    "  {\n"
-                    "    \"path\": \"...\",\n"
-                    "    \"reason\": \"...\",\n"
-                    "    \"github_url\": \"...\"\n"
-                    "  }\n"
-                    "]"
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.0,
+                    top_p=1,
+                    top_k=0,
+                    max_output_tokens=50000,
+                    response_mime_type="application/json"
                 )
             )
         except Exception as e:
@@ -87,7 +69,7 @@ class GeminiClient:
             {
               "path": "api/src/something.py",
               "reason": "why it might be relevant",
-              "github_url": "https://github.com/..."
+              "github_url": "https://github.com/..." or "local://path/to/file"
             },
             ...
           ]
@@ -108,9 +90,27 @@ Remember to err on the side of inclusion if there's any possibility of relevance
 Please return ONLY a valid JSON array of objects, each object with:
 - "path": "file path"
 - "reason": "why or how it may be relevant"
-- "github_url": "https://github.com/.../blob/main/path/to/file"
+- "github_url": For GitHub files, use the full GitHub URL. For local files, use "local://" + file path
 
 If no files are relevant at all, return: []
+
+Example response for GitHub files:
+[
+  {{
+    "path": "src/auth.py",
+    "reason": "Contains authentication logic",
+    "github_url": "https://github.com/org/repo/blob/main/src/auth.py"
+  }}
+]
+
+Example response for local files:
+[
+  {{
+    "path": "src/auth.py",
+    "reason": "Contains authentication logic",
+    "github_url": "local://src/auth.py"
+  }}
+]
 """
 
             # JSON schema that expects an array of objects

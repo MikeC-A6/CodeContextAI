@@ -1,6 +1,7 @@
 import streamlit as st
 from .components import UIComponents
 from ..services.file_handler import FileHandler
+from ..services.github_extractor import GitHubExtractor
 from ..services.llm_chain import LLMChain
 
 class MainPage:
@@ -9,19 +10,25 @@ class MainPage:
     def __init__(self):
         self.components = UIComponents()
         self.file_handler = FileHandler()
+        self.github_extractor = GitHubExtractor()
         self.llm_chain = LLMChain()
 
     def render(self):
         """Render the main page"""
         st.title("Code Q&A Tool")
-        st.write("Upload a JSONL file containing code and ask questions about it.")
+        st.write("Upload a JSONL file or enter a GitHub URL to ask questions about the code.")
 
-        # File upload section
-        file_content = self.components.show_file_uploader()
+        # Input section
+        input_method, input_data = self.components.show_input_selector()
         
-        if file_content:
+        if input_data:
             try:
-                parsed_data = self.file_handler.parse_jsonl(file_content)
+                # Process input based on method
+                if input_method == "file":
+                    parsed_data = self.file_handler.parse_jsonl(input_data)
+                else:  # github
+                    parsed_data = self.github_extractor.extract_to_jsonl(input_data)
+                
                 code_context = self.file_handler.extract_code_context(parsed_data)
                 
                 # Question input section
@@ -38,4 +45,6 @@ class MainPage:
                             self.components.show_error(f"Error processing query: {str(e)}")
                             
             except ValueError as e:
-                self.components.show_error(f"Error parsing file: {str(e)}")
+                self.components.show_error(f"Error parsing input: {str(e)}")
+            except Exception as e:
+                self.components.show_error(f"Error: {str(e)}")
