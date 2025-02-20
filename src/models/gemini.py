@@ -1,3 +1,25 @@
+"""
+GeminiClient (enhanced to err on the side of inclusion)
+
+This module defines a GeminiClient that:
+1. Accepts a question and a large codebase context.
+2. Uses comprehensive system instructions to identify which files are relevant to the question.
+3. Returns a JSON array of objects of the form:
+   [
+     {
+       "path": "path/to/file",
+       "reason": "why the file might be relevant",
+       "github_url": "https://github.com/..."
+     },
+     ...
+   ]
+4. If no relevant files are found, returns [].
+
+NOTES:
+- This version heavily emphasizes including a file if there is any plausible reason it could be relevant.
+- We keep the code-structure usage the same, but adjust the system prompt to encourage thoroughness.
+"""
+
 import google.generativeai as genai
 
 class LLMException(Exception):
@@ -6,70 +28,120 @@ class LLMException(Exception):
 
 class GeminiClient:
     """
-    A simplified Gemini client that:
-    1. Accepts a question and a code context (read directly from a JSONL file).
-    2. Passes a robust prompt to Gemini 2.0 Flash Lite with all the code.
-    3. Returns entire code files deemed relevant, erring on the side of including extra context.
+    A Gemini client that:
+    1. Takes a question and a codebase context (e.g. from a large JSONL or other source).
+    2. Heavily emphasizes including any potentially relevant file references,
+       even if you're not fully certain of its relevance.
+    3. Returns a JSON array of file references, each containing:
+       - path
+       - reason
+       - github_url
     """
 
     def __init__(self, api_key: str, model_name: str):
         """
-        :param api_key: The Google Generative AI (Vertex) API key.
-        :param model_name: The Gemini model identifier, e.g., 'models/text-bison-001'
+        :param api_key: Google Generative AI API key.
+        :param model_name: The Gemini model identifier, e.g., 'models/gemini-2.0-flash'
         """
         try:
+            # Configure the client with your API key.
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel(model_name)
+
+            # Adjusted system instruction to emphasize thoroughness.
+            self.model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=(
+                    "You are a code analysis assistant acting as a retrieval-augmented generation (RAG) component. "
+                    "Your job:\n"
+                    "1. Analyze a user-provided question and a large codebase context.\n"
+                    "2. Identify any files that are or might be relevant to the user's question. If there is any shred of doubt, "
+                    "err on the side of inclusion.\n"
+                    "3. For each relevant file, return a JSON object:\n"
+                    "   {\n"
+                    "     \"path\": \"...\",\n"
+                    "     \"reason\": \"why it is or might be relevant\",\n"
+                    "     \"github_url\": \"https://github.com/...\"\n"
+                    "   }\n\n"
+                    "Return only a JSON array of these objects and nothing else. If no files are relevant, return [].\n"
+                    "Under no circumstances provide code snippets; only references. "
+                    "When evaluating relevance, be broad but not indiscriminate: If a file is almost certainly irrelevant, do not include it. "
+                    "However, if there's any potential link to the question, include it.\n"
+                    "Exact JSON schema:\n"
+                    "[\n"
+                    "  {\n"
+                    "    \"path\": \"...\",\n"
+                    "    \"reason\": \"...\",\n"
+                    "    \"github_url\": \"...\"\n"
+                    "  }\n"
+                    "]"
+                )
+            )
         except Exception as e:
             raise LLMException(f"Failed to initialize Gemini: {str(e)}")
 
     def generate(self, question: str, code_context: str) -> str:
         """
-        Call Gemini 2.0 Flash Lite with a large code context (from a JSONL file) and a user question.
-        The prompt instructs the model to return entire code files that might be relevant to the question.
-        If you return a file and you think that there are other relevant files that help to complete the picture,
-        return those files as well. Err on the side of returning more context.
-
-        :param question: The user question or prompt.
-        :param code_context: A large string containing code and metadata directly read from a JSONL file.
-        :return: A text block containing the entire code files considered relevant.
+        Calls the configured Gemini model with a codebase context and user question.
+        Returns a JSON string with array of objects:
+          [
+            {
+              "path": "api/src/something.py",
+              "reason": "why it might be relevant",
+              "github_url": "https://github.com/..."
+            },
+            ...
+          ]
+        or "[]" if no relevant files are found.
         """
+
         try:
+            # Prompt includes the codebase context and the question
             prompt = f"""
-            You are given a large codebase context below, and a question.
-            Your task is to scan the code for any files that might help answer the question.
-            For any file that seems relevant, return the entire code file with all its context.
-            Do not summarize or condense the code.
-            If you return a file and you think that there are other relevant files that help to complete the picture, return those files as well.
-            Err on the side of including more code files if you think the content might be even slightly related to the question.
-            Do not provide a complete solution to the question; your job is solely to identify and return
-            the relevant code files in full.
+QUESTION:
+{question}
 
-            QUESTION:
-            {question}
+CODEBASE CONTEXT (potentially large):
+{code_context}
 
-            CODEBASE CONTEXT (potentially large):
-            {code_context}
+Remember to err on the side of inclusion if there's any possibility of relevance.
 
-            Please return your response as a list of entire code files, for example:
+Please return ONLY a valid JSON array of objects, each object with:
+- "path": "file path"
+- "reason": "why or how it may be relevant"
+- "github_url": "https://github.com/.../blob/main/path/to/file"
 
-            RELEVANT CODE FILES:
-            File: <file path>
-            <full file content>
+If no files are relevant at all, return: []
+"""
 
-            File: <file path>
-            <full file content>
-
-            If no relevant files are found, respond with an empty or minimal output.
-            """
+            # JSON schema that expects an array of objects
+            schema = {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string"
+                        },
+                        "reason": {
+                            "type": "string"
+                        },
+                        "github_url": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["path", "reason", "github_url"]
+                }
+            }
 
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=50000
+                    temperature=0.0,
+                    top_p=1,
+                    top_k=0,
+                    max_output_tokens=50000,
+                    response_mime_type="application/json",
+                    response_schema=schema
                 )
             )
 
