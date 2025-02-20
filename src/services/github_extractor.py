@@ -9,19 +9,7 @@ import json
 import git
 import pathspec
 
-# Default patterns to ignore when extracting code
-DEFAULT_PATTERNS = [
-    ".git/**",
-    "node_modules/**",
-    "*.pyc",
-    "__pycache__/**",
-    "*.jpg", "*.jpeg", "*.png", "*.gif", "*.ico",
-    "*.pdf", "*.mov", "*.mp4", "*.mp3", "*.wav",
-    "*.o", "*.so", "*.dll", "*.dylib",
-    "*.class", "*.jar",
-    "dist/**", "build/**",
-    ".env",
-]
+from ..config.ignore_patterns import DEFAULT_IGNORE_PATTERNS
 
 class GitHubExtractor:
     def __init__(self, max_file_size_bytes: int = 5 * 1024 * 1024):
@@ -46,7 +34,7 @@ class GitHubExtractor:
             temp_dir = self._clone_repo(repo_url, branch)
             
             # Build ignore spec
-            ignore_spec = pathspec.PathSpec.from_lines("gitwildmatch", DEFAULT_PATTERNS)
+            ignore_spec = pathspec.PathSpec.from_lines("gitwildmatch", DEFAULT_IGNORE_PATTERNS)
             
             # Gather files
             files = self._gather_files(temp_dir, subdir, ignore_spec)
